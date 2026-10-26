@@ -42,9 +42,22 @@ async def _cmd_scan(args) -> int:
     return 0
 
 
+async def _connect_hint(bp: BpBridge, address: str):
+    """connect() with a friendly message for a sleeping meter."""
+    try:
+        return await bp.connect(address)
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise RuntimeError(
+                f"{address} is not advertising — this monitor only wakes "
+                f"for a while after its power button; press it and retry"
+            ) from e
+        raise
+
+
 async def _cmd_connect_session(args, what: str) -> int:
     async with BpBridge() as bp:
-        meter = await bp.connect(args.address)
+        meter = await _connect_hint(bp, args.address)
         try:
             if args.info_first:
                 info = await meter.device_info()
@@ -74,7 +87,7 @@ async def _cmd_connect_session(args, what: str) -> int:
 
 async def _cmd_info(args) -> int:
     async with BpBridge() as bp:
-        meter = await bp.connect(args.address)
+        meter = await _connect_hint(bp, args.address)
         try:
             print(await meter.gatt_dump())
             info = await meter.device_info()

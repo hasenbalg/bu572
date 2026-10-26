@@ -47,9 +47,15 @@ confirmed on Frank's hardware.
   companion channel on scales uses `E7`-framed commands). Kept OUT of
   bpbridge's standard path — see "Vendor channel" below.
 * **Plain (unpaired) connection: subscribing to 2A35 produced no push**
-  within the session window. Prior art pairs before subscribing
-  (`establish_connection(pair=True)`); testing `bpbridge pair` next —
-  pending result, marked unconfirmed.
+  within the session window. **CONFIRMED LIVE:** after `bpbridge pair`
+  (Just Works), the very next `dump` received the device's stored records
+  — bonding is a hard precondition for the indication push.
+* First live dump (same day, right after bonding): 5 records pushed in one
+  session, **mmHg** values (flag unit bit clear) carrying timestamp, pulse,
+  user (=1) and status (=0); oldest record ~5 weeks back, so the push
+  includes stored history, not just the newest.
+* Device-local timestamps behave as Berlin wall clock (device shows local
+  time; stored naive by design).
 
 ## Vendor channel (f000ffc0-0451-4000-b000-000000000000)
 

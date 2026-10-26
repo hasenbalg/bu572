@@ -15,10 +15,11 @@ with the same code path.
 
 | Device | BLE `dump` | BLE `watch` | Notes |
 |---|---|---|---|
-| **Medisana BU 572 connect** (TMB-2276-B) | protocol implemented from published prior art; simulated-meter tests; **live verification pending** | simulated tests only | live probe: `tools/raw_capture.py` |
+| **Medisana BU 572 connect** (TMB-2276-B) | **live-verified** — bonded session pushed 5 stored records (mmHg, ts+pulse+user+status), CSV/JSON export OK | simulated tests; same subscribe path, live run pending | **pairing required** before the push; live probe: `tools/raw_capture.py` |
 
-Until the live run on real hardware is done this table stays as-is —
-nothing here claims "tested" that hasn't been.
+The table lists only what has actually been run on hardware; anything
+implemented but not yet verified on a physical meter would be listed
+below it instead.
 
 ## How the transfer works
 
@@ -26,8 +27,10 @@ Unlike glucose meters there is no Record Access Control Point here.  The
 BU 572 pushes its stored records as **BP Measurement (0x2A35) indications**
 immediately after a central subscribes, then goes silent — the session is
 closed after a quiet period (1.5 s default, 25 s cap, both tunable).
+**The push requires a bond**: on a plain link the subscription succeeds but
+nothing is ever sent — run `bpbridge pair` once (Just Works).
 Records are deduplicated by content, so repeated syncs are harmless.
-The device advertises as `BU 572`.
+The device advertises as `BU 572` (and only while awake).
 
 ## Install
 
