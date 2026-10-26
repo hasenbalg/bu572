@@ -29,8 +29,12 @@ immediately after a central subscribes, then goes silent — the session is
 closed after a quiet period (1.5 s default, 25 s cap, both tunable).
 **The push requires a bond**: on a plain link the subscription succeeds but
 nothing is ever sent — run `bpbridge pair` once (Just Works).
-Records are deduplicated by content, so repeated syncs are harmless.
-The device advertises as `BU 572` (and only while awake).
+The meter pushes **only records not yet transferred to a central**
+(live-verified): the first dump gets the stored backlog, later dumps only
+whatever was measured since — so a periodic `dump` is an incremental
+sync.  Records are additionally deduplicated by content, so repeated or
+overlapping syncs are harmless.  The device advertises as `BU 572` (and
+only while awake).
 
 ## Install
 
@@ -85,9 +89,14 @@ cuff too loose, ...), and the raw notification bytes for debugging.
   timestamps records with its own RTC — set it via the device menu.
   Pairing (an explicit user command) is the only state change we make.
 * **No history protocol beyond the push.** The 199-slots-per-user memory is
-  delivered via the same indication push.  Whether the device re-pushes
-  records an earlier sync already marked as transferred is being verified
-  on live hardware (see FINDINGS.md).
+  delivered via the indication push, and only records NOT yet transferred
+  to a central are pushed (live-verified: backlog on first bonded dump,
+  empty dumps afterwards, exactly one new record after one fresh
+  measurement).  Consumed records stay visible on the device display but are never
+  re-offered to the central that read them; whether the transferred-flag
+  is global or per-bond is untested — if global, a VitaDock phone-app sync
+  would consume records before bpbridge sees them, so keep one designated
+  sync host and keep phone Bluetooth off around it.
 * **Vendor cloud untouched.** Nothing here talks to Medisana/VitaDock.
 
 ## Development

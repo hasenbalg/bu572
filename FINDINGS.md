@@ -56,6 +56,15 @@ confirmed on Frank's hardware.
   includes stored history, not just the newest.
 * Device-local timestamps behave as Berlin wall clock (device shows local
   time; stored naive by design).
+* **Transfer semantics (live, same day): the meter pushes only records not
+  yet transferred to a central.** Two immediate re-dumps returned 0
+  records; after one fresh measurement the next dump returned exactly 1.
+  Corollaries: (a) periodic dump = incremental sync (cron-friendly),
+  (b) the FIRST central to connect after measurements consumes them — a
+  VitaDock phone app sync would steal records from bpbridge's view (and
+  vice versa), so pick one designated sync host,
+  (c) historical deep-backlog behaviour (all 199 slots?) untested — the
+  first dump delivered the backlog that existed.
 
 ## Vendor channel (f000ffc0-0451-4000-b000-000000000000)
 

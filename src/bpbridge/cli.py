@@ -59,7 +59,7 @@ async def _cmd_connect_session(args, what: str) -> int:
     async with BpBridge() as bp:
         meter = await _connect_hint(bp, args.address)
         try:
-            if args.info_first:
+            if getattr(args, "info_first", False):
                 info = await meter.device_info()
                 for k, v in info.items():
                     print(f"{k}: {v}")
@@ -131,6 +131,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="print device info before the transfer")
     s = sub.add_parser("watch", help="keep the session open for live readings")
     s.add_argument("address")
+    s.add_argument("--info-first", action="store_true",
+                   help="print device info before subscribing")
     s.add_argument("--intermediate", action="store_true",
                    help="(reserved) log cuff pressure while inflating")
 
