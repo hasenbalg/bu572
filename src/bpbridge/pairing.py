@@ -137,7 +137,7 @@ async def _register_agent(bus):
     async def raw(member: str, sig: str, body: list):
         m = Message(destination="org.bluez", path="/org/bluez",
                     interface="org.bluez.AgentManager1", member=member,
-                    signature=sig, body=body, expect_reply=True)
+                    signature=sig, body=body)
         reply = await bus.call(m)
         if reply.msg_type == MessageType.ERROR:
             raise reply.default_error()
