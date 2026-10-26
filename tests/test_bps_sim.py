@@ -43,6 +43,8 @@ class FakeClient:
         self.services = [
             FakeSvc(gatt.BP_SERVICE, [self.bp, self.cuff]),
             FakeSvc(gatt.BATTERY_SERVICE, [FakeChar(gatt.BATTERY_LEVEL)]),
+            FakeSvc(gatt.CURRENT_TIME_SERVICE,
+                    [FakeChar(gatt.CURRENT_TIME, ("read", "write"))]),
             FakeSvc(gatt.DEVICE_INFO_SERVICE, [
                 FakeChar(gatt.MANUFACTURER_NAME), FakeChar(gatt.MODEL_NUMBER),
                 FakeChar(gatt.FIRMWARE_REVISION)]),
@@ -50,15 +52,22 @@ class FakeClient:
                     [FakeChar("00002a05-0000-1000-8000-00805f9b34fb",
                               ("indicate",))]),
         ]
+        self.writes = {}
         self._reads = {
             gatt.BATTERY_LEVEL: b"\x64",
             gatt.MANUFACTURER_NAME: b"medisana",
             gatt.MODEL_NUMBER: b"TMB-2276-B",
             gatt.FIRMWARE_REVISION: b"V1.0.7",
+            # meter clock 2026-10-26 20:00:00, Monday, no fraction, adj 0
+            gatt.CURRENT_TIME: bytes.fromhex("ea070a1a140000010000"),
         }
 
     async def start_notify(self, char, cb):
         self.callbacks[char.uuid] = cb
+
+    async def write_gatt_char(self, char, data, response=False):
+        uuid = char.uuid if hasattr(char, "uuid") else char
+        self.writes[uuid] = bytes(data)
 
     async def read_gatt_char(self, char):
         uuid = char.uuid if hasattr(char, "uuid") else char
@@ -144,3 +153,19 @@ async def test_gatt_dump_lists_services():
     assert gatt.BP_SERVICE in dump
     assert gatt.BP_MEASUREMENT in dump
     assert "[indicate]" in dump
+
+
+async def test_current_time_read_and_set():
+    import datetime as dt
+
+    m, fake = _meter_with_fake()
+
+    assert await m.current_time() == dt.datetime(2026, 10, 26, 20, 0, 0)
+
+    payload = await m.set_current_time(dt.datetime(2026, 10, 26, 23, 59, 1))
+    # Date Time LE + Day of Week (Mon=1) + Fractions256=0 + Adjust=1
+    assert payload == bytes.fromhex("ea070a1a173b010100 01".replace(" ", ""))
+    assert fake.writes[gatt.CURRENT_TIME] == payload
+
+    info = await m.device_info()
+    assert info["current_time"] == "2026-10-26T20:00:00"

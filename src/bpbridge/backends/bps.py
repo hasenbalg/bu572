@@ -10,7 +10,9 @@ further packets.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
+import struct
 import time
 from typing import AsyncIterator, Callable, Optional
 
@@ -212,6 +214,38 @@ class BpMeter:
             log.debug("battery read failed: %s", e)
             return None
 
+    # --------------------------------------------------- Current Time (opt-in)
+    async def current_time(self) -> Optional[dt.datetime]:
+        """Read the meter's wall clock (device-local, naive datetime)."""
+        c = self._require()
+        raw = await c.read_gatt_char(self._char(gatt.CURRENT_TIME))
+        if len(raw) < 7:
+            return None
+        y, mo, d, h, mi, s = struct.unpack_from("<H5B", raw, 0)
+        try:
+            return dt.datetime(y, mo, d, h, mi, s)
+        except ValueError:
+            return None
+
+    async def set_current_time(self, when: dt.datetime) -> bytes:
+        """Write the Current Time characteristic (0x2A2B).
+
+        Explicit opt-in only — no sync path calls this automatically
+        (see README "Design decisions").  Payload is the SIG Current Time
+        layout, 10 bytes: Date Time (u16 LE year, month, day, hour, min,
+        sec — device-local wall time) + Day of Week (1=Mon..7=Sun) +
+        Fractions256 (0) + Adjust Reason (1 = ODP field update).
+        Requires encryption on this firmware, i.e. a bond — `pair` first.
+        """
+        c = self._require()
+        payload = struct.pack("<H8B", when.year, when.month, when.day,
+                              when.hour, when.minute, when.second,
+                              when.isoweekday(), 0, 1)
+        await c.write_gatt_char(self._char(gatt.CURRENT_TIME), payload,
+                                response=True)
+        log.info("wrote current time %s to %s", when.isoformat(), self.name)
+        return payload
+
     async def device_info(self) -> dict:
         c = self._require()
         info = {}
@@ -229,6 +263,9 @@ class BpMeter:
         try:
             raw = await c.read_gatt_char(self._char(gatt.CURRENT_TIME))
             info["current_time_raw"] = raw.hex()
+            t = await self.current_time()
+            if t is not None:
+                info["current_time"] = t.isoformat()
         except Exception:
             pass
         b = await self.battery()

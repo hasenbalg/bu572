@@ -1,9 +1,10 @@
-"""Command line interface: scan | info | dump | watch | pair | unpair."""
+"""Command line interface: scan | info | dump | watch | settime | pair | unpair."""
 from __future__ import annotations
 
 import argparse
 import asyncio
 import csv
+import datetime as dt
 import json
 import logging
 import sys
@@ -103,6 +104,41 @@ async def _cmd_info(args) -> int:
                 pass
 
 
+async def _cmd_settime(args) -> int:
+    if args.tz:
+        from zoneinfo import ZoneInfo
+        now = dt.datetime.now(ZoneInfo(args.tz))
+    else:
+        now = dt.datetime.now()
+    if args.at:
+        now = dt.datetime.fromisoformat(args.at)
+
+    async with BpBridge() as bp:
+        meter = await _connect_hint(bp, args.address)
+        try:
+            old = await meter.current_time()
+            print(f"meter clock: {old.isoformat() if old else 'unreadable'}")
+            print(f"writing:     {now.replace(microsecond=0).isoformat()} "
+                  f"(device-local wall time)")
+            if not args.yes:
+                if not sys.stdin.isatty():
+                    raise RuntimeError("pass --yes to set the time "
+                                       "non-interactively")
+                if input("proceed? [y/N] ").strip().lower() not in ("y", "yes"):
+                    print("aborted")
+                    return 1
+            payload = await meter.set_current_time(now)
+            print(f"wrote {payload.hex(' ')}")
+            verify = await meter.current_time()
+            print(f"read back:   {verify.isoformat() if verify else 'unreadable'}")
+            return 0
+        finally:
+            try:
+                await meter.disconnect()
+            except Exception:
+                pass
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="bpbridge",
@@ -136,6 +172,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--intermediate", action="store_true",
                    help="(reserved) log cuff pressure while inflating")
 
+    s = sub.add_parser(
+        "settime",
+        help="write the host clock to the meter (explicit opt-in, bonded)")
+    s.add_argument("address")
+    s.add_argument("--tz", metavar="IANA_TZ",
+                   help="e.g. Europe/Berlin (default: host-local time)")
+    s.add_argument("--at", metavar="ISO_DATETIME",
+                   help="explicit wall time, e.g. '2026-10-27 08:00:00'")
+    s.add_argument("--yes", action="store_true", help="skip confirmation")
+
     s = sub.add_parser("pair", help="bond with the device (one-time)")
     s.add_argument("address")
     s.add_argument("--renew", action="store_true",
@@ -160,6 +206,8 @@ def main(argv=None) -> int:
             return asyncio.run(_cmd_connect_session(args, "dump"))
         if args.cmd == "watch":
             return asyncio.run(_cmd_connect_session(args, "watch"))
+        if args.cmd == "settime":
+            return asyncio.run(_cmd_settime(args))
         if args.cmd == "pair":
             return 0 if asyncio.run(pair(args.address, renew=args.renew)) else 1
         if args.cmd == "unpair":

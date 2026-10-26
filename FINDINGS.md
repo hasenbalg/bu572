@@ -73,6 +73,7 @@ push: full 199-slot-per-user history export, user profile sync, device
 settings. bpbridge stays on the certified path; if the standard push turns
 out to only ever deliver new records, this service is where the RE work
 would continue (read-only observation via `tools/raw_capture.py` first).
+Vendor clouds / VitaDock REST remain out of scope entirely.
 
 ## Transfer model *(prior art)*
 
@@ -116,13 +117,14 @@ sys,dia,map  3 × SFLOAT16 LE
 * Guest mode: user raw `0xFF` → `BpReading.guest == True` *(inference from
   the marketing "guest mode" feature + SIG 0xFF semantics; confirm live)*.
 
-## Deliberately NOT implemented
+## Time sync (opt-in only)
 
-* **Current Time (0x2A2B) write.** Prior art syncs the host clock to the
-  meter on every session.  Policy for medical meters in this repo family
-  is read-only; the clock belongs to the device menu.  (A time-drifted
-  meter yields time-drifted timestamps — visible, correctable on-device.)
-* Vendor clouds / VitaDock REST — out of scope entirely.
+* Current Time (0x2A2B) is read/write/notify *(live)*.  Prior art rewrites
+  the host clock on every session; bpbridge writes ONLY via the explicit
+  `settime` command (SIG layout: Date Time LE + Day of Week + Fractions256
+  + Adjust Reason 1 = ODP field update; 10 bytes; encrypted, i.e. bonded —
+  write on a plain link fails, prior art pairs then retries).
+* Live status of the write path: pending hardware confirmation.
 
 ## Prior art / sources
 
