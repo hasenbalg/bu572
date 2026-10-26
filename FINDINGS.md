@@ -1,0 +1,90 @@
+# FINDINGS — Medisana BU 572 connect (TMB-2276-B) over BLE
+
+Protocol notes for the `bps` backend.  Status: **implemented from prior
+art, live verification pending** — everything below marked *(prior art)*
+was established by the community projects credited at the bottom and is
+encoded in the parser/simulator tests; mark *(live)* items as they are
+confirmed on Frank's hardware.
+
+## Device identity
+
+* Advertises name `BU 572` *(prior art: jagula config_flow matches the
+  exact string)*.
+* Device Info (expected, pending live read): manufacturer `medisana`,
+  model marking `TMB-2276-B`.
+* Pairs via Just Works (no numeric display/keypad); bonding is optional
+  for the BP push but required for the writable Current Time characteristic
+  *(prior art)*.
+
+## GATT surface *(prior art)*
+
+| Function | UUID |
+|---|---|
+| Blood Pressure Service | `0x1810` |
+| Blood Pressure Measurement (indicate) | `0x2A35` |
+| Battery Level (read) | `0x2A19` |
+| Current Time Service / Time (read, **write on purpose unused**) | `0x1805` / `0x2A2B` |
+
+Whether `0x2A36` (Intermediate Cuff Pressure) exists on this model is not
+documented publicly — the live `info`/`raw_capture` run will show it.
+
+## Transfer model *(prior art)*
+
+1. Central connects (plain connection suffices for the push).
+2. Central subscribes to 0x2A35 indications.
+3. Device pushes stored records, one indication per record, starting
+   within seconds; ends silently.  Tuning values carried over: first
+   packet within ~6 s, session quiet-timeout 1.5 s, hard cap 25 s.
+4. Freshly taken measurements are indicated while the central stays
+   connected (and pushed on the next session otherwise).
+
+Dedup key used by bpbridge: (timestamp, sys, dia, map, pulse, user_raw,
+status) — same field tuple prior art uses, content-addressed so repeat
+syncs are idempotent.
+
+**Open question for the live run:** does the meter re-push the complete
+memory on every connect, or only records not yet marked transferred by a
+previous central (the VitaDock app or an HA sync could have "consumed"
+them)?  Test: `dump` twice; then take a new measurement and `dump` again.
+
+## Record layout (0x2A35, Bluetooth SIG BLP spec)
+
+```
+flags u8:  bit0 unit (0=mmHg, 1=kPa)   bit1 timestamp   bit2 pulse
+           bit3 user id                bit4 status
+sys,dia,map  3 × SFLOAT16 LE
+[timestamp]  u16 LE year, u8 month, day, hour, min, sec  (device-local)
+[pulse]      SFLOAT16 LE
+[user]       u8   0 → user 1, 1 → user 2, 0xFF → guest mode
+[status]     u16 LE  (lenient: some firmwares send 1 byte)
+```
+
+* The **kPa flag matters**: the BU 572 may deliver pressures in kPa
+  (flag bit0), requiring ×7.50061683 → mmHg *(prior art, encoded in
+  `test_records.py`)*.
+* MAP is taken from the device, never recomputed *(prior art)*.
+* Measurement status bits: 0 body movement, 1 cuff too loose,
+  2 speech detected.  The BU 572 also markets an "irregular heartbeat"
+  indicator — where that bit lives is unconfirmed; keep `status` raw in
+  JSON export until seen live.
+* Guest mode: user raw `0xFF` → `BpReading.guest == True` *(inference from
+  the marketing "guest mode" feature + SIG 0xFF semantics; confirm live)*.
+
+## Deliberately NOT implemented
+
+* **Current Time (0x2A2B) write.** Prior art syncs the host clock to the
+  meter on every session.  Policy for medical meters in this repo family
+  is read-only; the clock belongs to the device menu.  (A time-drifted
+  meter yields time-drifted timestamps — visible, correctable on-device.)
+* Vendor clouds / VitaDock REST — out of scope entirely.
+
+## Prior art / sources
+
+* https://github.com/jagula/home-assistant-medisana-bu572 — first public
+  BU 572 integration (MIT); the primary factual source for this file.
+  All code in this repo is written independently; protocol *facts* were
+  learned from its README and behaviour.
+* https://github.com/bkbilly/medisanabp_ble — sibling Medisana BP models.
+* https://community.home-assistant.io/t/esphome-bluetooth-tracker-for-medisana-bu-570-575-584-blood-pressure-monitor/967208
+* Bluetooth SIG: Blood Pressure Service specification (record layout,
+  SFLOAT16, Measurement Status values).

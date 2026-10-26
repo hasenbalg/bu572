@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bpbridge"
+version = "0.1.0"
+description = "Read blood pressure monitors over Bluetooth LE — no vendor cloud (Medisana BU 572 connect; standard Blood Pressure Service backend)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "bleak>=0.22",
+    "dbus-fast>=2",         # BlueZ pairing agent (also a bleak dep on Linux)
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff>=0.6"]
+
+[project.scripts]
+bpbridge = "bpbridge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 90
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# The pairing agent annotates its D-Bus methods with raw signature strings
+# ("o", "u", "s", "q") that dbus-fast parses itself and Python never
+# evaluates -- ruff's F821 cannot know that.
+"src/bpbridge/pairing.py" = ["F821"]
