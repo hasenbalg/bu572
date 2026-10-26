@@ -105,11 +105,13 @@ async def _cmd_info(args) -> int:
 
 
 async def _cmd_settime(args) -> int:
-    if args.tz:
-        from zoneinfo import ZoneInfo
-        now = dt.datetime.now(ZoneInfo(args.tz))
-    else:
-        now = dt.datetime.now()
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    try:
+        tz = ZoneInfo(args.tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        print(f"error: unknown timezone {args.tz!r}", file=sys.stderr)
+        return 2
+    now = dt.datetime.now(tz)
     if args.at:
         now = dt.datetime.fromisoformat(args.at)
 
@@ -119,14 +121,7 @@ async def _cmd_settime(args) -> int:
             old = await meter.current_time()
             print(f"meter clock: {old.isoformat() if old else 'unreadable'}")
             print(f"writing:     {now.replace(microsecond=0).isoformat()} "
-                  f"(device-local wall time)")
-            if not args.yes:
-                if not sys.stdin.isatty():
-                    raise RuntimeError("pass --yes to set the time "
-                                       "non-interactively")
-                if input("proceed? [y/N] ").strip().lower() not in ("y", "yes"):
-                    print("aborted")
-                    return 1
+                  f"({args.tz} wall time)")
             payload = await meter.set_current_time(now)
             print(f"wrote {payload.hex(' ')}")
             verify = await meter.current_time()
@@ -174,13 +169,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser(
         "settime",
-        help="write the host clock to the meter (explicit opt-in, bonded)")
+        help="write the given timezone's clock to the meter (bonded)")
     s.add_argument("address")
-    s.add_argument("--tz", metavar="IANA_TZ",
-                   help="e.g. Europe/Berlin (default: host-local time)")
+    s.add_argument("--tz", metavar="IANA_TZ", required=True,
+                   help="required, e.g. Europe/Berlin — the wall time "
+                        "written to the meter")
     s.add_argument("--at", metavar="ISO_DATETIME",
-                   help="explicit wall time, e.g. '2026-10-27 08:00:00'")
-    s.add_argument("--yes", action="store_true", help="skip confirmation")
+                   help="explicit wall time, e.g. '2026-10-27 08:00:00' "
+                        "(overrides --tz's current time)")
 
     s = sub.add_parser("pair", help="bond with the device (one-time)")
     s.add_argument("address")

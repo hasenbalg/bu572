@@ -53,8 +53,8 @@ bpbridge info AA:BB:CC:DD:EE:FF     # GATT dump + device info (diagnostics)
 bpbridge dump AA:BB:CC:DD:EE:FF --csv readings.csv   # full pushed history
 bpbridge dump AA:BB:CC:DD:EE:FF --json               # JSON to stdout
 bpbridge watch AA:BB:CC:DD:EE:FF    # keep the session open for live values
-bpbridge settime AA:BB:CC:DD:EE:FF  # write host clock to the meter (opt-in,
-                                    # confirms; --tz / --at / --yes available)
+bpbridge settime AA:BB:CC:DD:EE:FF --tz Europe/Berlin  # write the clock
+                                    # (opt-in; --at for an exact instant)
 bpbridge pair AA:BB:CC:DD:EE:FF     # bond once (Just Works agent)
 bpbridge unpair AA:BB:CC:DD:EE:FF   # remove this host's bond
 ```
@@ -89,7 +89,8 @@ cuff too loose, ...), and the raw notification bytes for debugging.
   Time (0x2A2B) characteristic; prior art rewrites the host clock on every
   sync session.  This library NEVER writes the clock as a side effect of
   scan/dump/watch — the only way a write happens is you running
-  `bpbridge settime` yourself (it shows old vs. new time and asks).
+  `bpbridge settime --tz <zone>` yourself (the timezone argument is
+  required so the written wall time is always deliberate).
   Records are timestamped by the meter's own RTC, so keeping it honest is
   worth a `settime` after battery changes.
 * **No history protocol beyond the push.** The 199-slots-per-user memory is
