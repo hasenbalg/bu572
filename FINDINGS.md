@@ -28,6 +28,12 @@ confirmed on Frank's hardware.
 ### Live GATT capture (2026-10-26, unit `B8:B7:7D:23:38:F6`) *(live)*
 
 * Advertises `BU 572`, classified and connected fine via the standard path.
+* Device Info (live reads): manufacturer **`LifeSense`** (the ODM behind
+  the Medisana connect line, not "medisana"), model `BU 572`, firmware
+  `1.2`, hardware `7600`, software `BLP.0` (Blood Pressure Profile),
+  serial `000000`, IEEE cert data = station address reversed
+  (`ff ee dd cc bb aa`). `0x2A50` reads `02 5e 04 40 00 00 03`
+  (raw, meaning unknown).
 * BP Service 0x1810 carries only **2A49 (read)** and **2A35 (indicate)** —
   there is NO 0x2A36 Intermediate Cuff Pressure on this model, so live cuff
   pressure is not available; 2A49 (cuff position per SIG) is readable.
