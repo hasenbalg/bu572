@@ -86,6 +86,20 @@ async def _read_paired(bus, path: str) -> bool:
     return bool(_unwrap(v))
 
 
+async def _set_trusted(bus, path: str, value: bool = True) -> None:
+    """Set Device1.Trusted via Properties.Set.
+
+    NOT dev1.call_set_trusted — Trusted is a D-Bus *property*; generated
+    proxy interfaces only synthesize call_* for real methods, so the
+    attribute simply does not exist (live crash).
+    """
+    from dbus_fast import Variant
+    props = bus.get_proxy_object(
+        "org.bluez", path, await bus.introspect("org.bluez", path)
+    ).get_interface("org.freedesktop.DBus.Properties")
+    await props.call_set("org.bluez.Device1", "Trusted", Variant("b", value))
+
+
 async def _device_known(bus, path: str) -> bool:
     """True iff BlueZ currently exposes org.bluez.Device1 at path.
 
@@ -139,7 +153,8 @@ async def _register_agent(bus):
                     interface="org.bluez.AgentManager1", member=member,
                     signature=sig, body=body)
         reply = await bus.call(m)
-        if reply.msg_type == MessageType.ERROR:
+        if getattr(reply, "error_name", None) or \
+                getattr(reply, "message_type", None) == MessageType.ERROR:
             raise reply.default_error()
         return reply
 
@@ -196,7 +211,7 @@ async def pair(address: str, renew: bool = False) -> bool:
 
         if await _read_paired(bus, path) and not renew:
             log.info("%s already paired — marking trusted", address)
-            await dev1.call_set_trusted(True)
+            await _set_trusted(bus, path)
             return True
 
         if renew:
@@ -214,7 +229,7 @@ async def pair(address: str, renew: bool = False) -> bool:
             if handle:
                 await handle.unregister()
 
-        await dev1.call_set_trusted(True)
+        await _set_trusted(bus, path)
         log.info("paired and trusted: %s", address)
         return True
     finally:

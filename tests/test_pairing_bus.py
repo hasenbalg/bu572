@@ -61,14 +61,15 @@ class FakeCallBus:
     async def call(self, msg):
         self.calls.append((msg.member, msg.signature, msg.body))
         from types import SimpleNamespace
-        return SimpleNamespace(msg_type=self.reply_type)
+        err = ("org.freedesktop.DBus.Error.Failed"
+               if self.reply_type == "error" else None)
+        return SimpleNamespace(message_type=None, error_name=err,
+                               default_error=lambda: RuntimeError("raw call failed"))
 
 
 async def test_agent_falls_back_to_raw_calls():
-    from dbus_fast import MessageType
-
     from bpbridge.pairing import _register_agent
-    bus = FakeCallBus(MessageType.METHOD_RETURN)
+    bus = FakeCallBus("ok")
     handle = await _register_agent(bus)
     assert handle is not None
     assert [c[0] for c in bus.calls] == ["RegisterAgent", "RequestDefaultAgent"]
@@ -77,8 +78,39 @@ async def test_agent_falls_back_to_raw_calls():
 
 
 async def test_agent_registration_may_give_up():
-    from dbus_fast import MessageType
-
     from bpbridge.pairing import _register_agent
-    bus = FakeCallBus(MessageType.ERROR)
+    bus = FakeCallBus("error")
     assert await _register_agent(bus) is None
+
+
+class FakePropsIface:
+    def __init__(self, sink):
+        self.sink = sink
+
+    async def call_set(self, iface, prop, variant):
+        self.sink.append((iface, prop, variant.signature, variant.value))
+
+
+class FakePropsHolder:
+    def __init__(self, sink):
+        self.sink = sink
+
+    def get_interface(self, name):
+        assert name == "org.freedesktop.DBus.Properties"
+        return FakePropsIface(self.sink)
+
+
+async def test_set_trusted_uses_properties_set():
+    from bpbridge.pairing import _set_trusted
+
+    sink = []
+
+    class Bus:
+        async def introspect(self, service, path):
+            return object()
+
+        def get_proxy_object(self, service, path, intro):
+            return FakePropsHolder(sink)
+
+    await _set_trusted(Bus(), "/org/bluez/hci0/dev_AA_BB")
+    assert sink == [("org.bluez.Device1", "Trusted", "b", True)]
