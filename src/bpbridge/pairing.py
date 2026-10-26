@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from dbus_fast import BusType, DBusError
+from dbus_fast import BusType, DBusError, Message, MessageType
 from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, method
 
@@ -113,6 +113,62 @@ async def _rediscover(address: str, timeout: float = 10.0) -> None:
         log.debug("rediscovery scan failed: %s", e)
 
 
+async def _register_agent(bus):
+    """Register our auto-agent on /org/bluez — best effort.
+
+    Returns a small handle with .unregister(), or None when no agent could
+    be registered (then we attempt Pair agentless — LE Just Works usually
+    completes without one).  Resolution falls back to RAW method calls:
+    some BlueZ builds don't expose AgentManager1 via introspection, and
+    dbus-fast's generated call_* methods then simply don't exist (never
+    assume a generated call_* exists).
+    """
+
+    class _Handle:
+        def __init__(self, call_fn):
+            self._call = call_fn
+
+        async def unregister(self):
+            try:
+                await self._call("UnregisterAgent", "o", [AGENT_PATH])
+            except Exception:
+                pass
+
+    async def raw(member: str, sig: str, body: list):
+        m = Message(destination="org.bluez", path="/org/bluez",
+                    interface="org.bluez.AgentManager1", member=member,
+                    signature=sig, body=body, expect_reply=True)
+        reply = await bus.call(m)
+        if reply.msg_type == MessageType.ERROR:
+            raise reply.default_error()
+        return reply
+
+    try:
+        root_intro = await bus.introspect("org.bluez", "/")
+        root = bus.get_proxy_object("org.bluez", "/", root_intro)
+        mgr = root.get_interface("org.bluez.AgentManager1")
+        await mgr.call_register_agent(AGENT_PATH, "DisplayYesNo")
+        try:
+            await mgr.call_request_default_agent(AGENT_PATH)
+        except Exception as e:
+            log.debug("RequestDefaultAgent failed (%s); continuing", e)
+        return _Handle(lambda *a: raw(*a))
+    except Exception as e:
+        log.debug("introspection-based agent registration failed: %s", e)
+
+    try:
+        await raw("RegisterAgent", "os", [AGENT_PATH, "DisplayYesNo"])
+        try:
+            await raw("RequestDefaultAgent", "o", [AGENT_PATH])
+        except Exception as e:
+            log.debug("RequestDefaultAgent (raw) failed (%s); continuing", e)
+        return _Handle(raw)
+    except Exception as e:
+        log.info("could not register pairing agent (%s) — "
+                 "trying Pair without it", e)
+        return None
+
+
 async def pair(address: str, renew: bool = False) -> bool:
     """Bond with a device (idempotent).  Returns True when bonded.
 
@@ -147,25 +203,16 @@ async def pair(address: str, renew: bool = False) -> bool:
             log.info("removing old host-side bond for %s", address)
             await _remove(bus, path)
 
-        root_intro = await bus.introspect("org.bluez", "/")
-        root = bus.get_proxy_object("org.bluez", "/", root_intro)
-        mgr = root.get_interface("org.bluez.AgentManager1")
         agent = BpAgentInterface()
         bus.export(AGENT_PATH, agent)
-        await mgr.call_register_agent(AGENT_PATH, "DisplayYesNo")
-        try:
-            await mgr.call_request_default_agent(AGENT_PATH)
-        except Exception as e:
-            log.debug("RequestDefaultAgent failed (%s); continuing", e)
+        handle = await _register_agent(bus)
 
         log.info("pairing %s ... (have the meter advertising)", address)
         try:
             await dev1.call_pair()
         finally:
-            try:
-                await mgr.call_unregister_agent(AGENT_PATH)
-            except Exception:
-                pass
+            if handle:
+                await handle.unregister()
 
         await dev1.call_set_trusted(True)
         log.info("paired and trusted: %s", address)

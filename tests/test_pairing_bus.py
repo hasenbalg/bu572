@@ -45,3 +45,40 @@ async def test_device_known_requires_device1_interface():
 
     # path gone entirely
     assert await _device_known(FakeBus({}), path) is False
+
+
+class FakeCallBus:
+    """Bus whose introspection-based agent lookup fails; raw bus.call
+    returns a canned reply type."""
+
+    def __init__(self, reply_type):
+        self.reply_type = reply_type
+        self.calls = []
+
+    async def introspect(self, service, path):
+        raise ValueError("no introspection for you")
+
+    async def call(self, msg):
+        self.calls.append((msg.member, msg.signature, msg.body))
+        from types import SimpleNamespace
+        return SimpleNamespace(msg_type=self.reply_type)
+
+
+async def test_agent_falls_back_to_raw_calls():
+    from dbus_fast import MessageType
+
+    from bpbridge.pairing import _register_agent
+    bus = FakeCallBus(MessageType.METHOD_RETURN)
+    handle = await _register_agent(bus)
+    assert handle is not None
+    assert [c[0] for c in bus.calls] == ["RegisterAgent", "RequestDefaultAgent"]
+    await handle.unregister()
+    assert bus.calls[-1][0] == "UnregisterAgent"
+
+
+async def test_agent_registration_may_give_up():
+    from dbus_fast import MessageType
+
+    from bpbridge.pairing import _register_agent
+    bus = FakeCallBus(MessageType.ERROR)
+    assert await _register_agent(bus) is None
