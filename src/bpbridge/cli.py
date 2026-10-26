@@ -51,6 +51,9 @@ async def _cmd_connect_session(args, what: str) -> int:
                 for k, v in info.items():
                     print(f"{k}: {v}")
             if what == "dump":
+                print("subscribed to 0x2A35 — waiting for the device push "
+                      "(records arrive after connect; if nothing arrives, "
+                      "run: bpbridge pair <MAC> first)...")
                 readings = await meter.collect(
                     quiet_seconds=args.quiet, max_seconds=args.max_seconds)
                 _print_readings(readings, args.json, args.csv)
@@ -113,7 +116,6 @@ def build_parser() -> argparse.ArgumentParser:
                    help="hard cap for one session (25)")
     s.add_argument("--info-first", action="store_true",
                    help="print device info before the transfer")
-
     s = sub.add_parser("watch", help="keep the session open for live readings")
     s.add_argument("address")
     s.add_argument("--intermediate", action="store_true",

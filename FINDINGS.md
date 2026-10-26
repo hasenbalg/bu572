@@ -25,8 +25,33 @@ confirmed on Frank's hardware.
 | Battery Level (read) | `0x2A19` |
 | Current Time Service / Time (read, **write on purpose unused**) | `0x1805` / `0x2A2B` |
 
-Whether `0x2A36` (Intermediate Cuff Pressure) exists on this model is not
-documented publicly — the live `info`/`raw_capture` run will show it.
+### Live GATT capture (2026-10-26, unit `B8:B7:7D:23:38:F6`) *(live)*
+
+* Advertises `BU 572`, classified and connected fine via the standard path.
+* BP Service 0x1810 carries only **2A49 (read)** and **2A35 (indicate)** —
+  there is NO 0x2A36 Intermediate Cuff Pressure on this model, so live cuff
+  pressure is not available; 2A49 (cuff position per SIG) is readable.
+* Battery 0x2A19 is read **and notify**; Current Time 0x2A2B is
+  read/write/notify (write still deliberately unused).
+* Device Info exposes the full 2A23..2A2A + 0x2A50 set.
+* **Vendor service `f000ffc0-0451-4000-b000-000000000000`** with chars
+  `ffc1`/`ffc2` (write + notify): the VitaDock app channel. This
+  f000ffc0-0451-4000 platform appears across Medisana/Beurer/Sanitas
+  devices (ble-scale-sync's Beurer/Sanitas adapter keys on it; the
+  companion channel on scales uses `E7`-framed commands). Kept OUT of
+  bpbridge's standard path — see "Vendor channel" below.
+* **Plain (unpaired) connection: subscribing to 2A35 produced no push**
+  within the session window. Prior art pairs before subscribing
+  (`establish_connection(pair=True)`); testing `bpbridge pair` next —
+  pending result, marked unconfirmed.
+
+## Vendor channel (f000ffc0-0451-4000-b000-000000000000)
+
+Exists but unexplored. Candidates for what it adds over the standard
+push: full 199-slot-per-user history export, user profile sync, device
+settings. bpbridge stays on the certified path; if the standard push turns
+out to only ever deliver new records, this service is where the RE work
+would continue (read-only observation via `tools/raw_capture.py` first).
 
 ## Transfer model *(prior art)*
 
