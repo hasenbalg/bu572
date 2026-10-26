@@ -86,6 +86,33 @@ async def _read_paired(bus, path: str) -> bool:
     return bool(_unwrap(v))
 
 
+async def _device_known(bus, path: str) -> bool:
+    """True iff BlueZ currently exposes org.bluez.Device1 at path.
+
+    Introspection alone is NOT proof: BlueZ answers introspect on stale
+    paths, and get_interface then dies with the misleading
+    "interface not found on this object: org.bluez.Device1".
+    ObjectManager is the authoritative object list.
+    """
+    root_intro = await bus.introspect("org.bluez", "/")
+    root = bus.get_proxy_object("org.bluez", "/", root_intro)
+    mgr = root.get_interface("org.freedesktop.DBus.ObjectManager")
+    objects = await mgr.call_get_managed_objects()
+    return path in objects and "org.bluez.Device1" in objects[path]
+
+
+async def _rediscover(address: str, timeout: float = 10.0) -> None:
+    """Kick a BlueZ discovery pass so the Device1 object (re)appears.
+
+    The meter must be awake/advertising while this runs.
+    """
+    try:
+        from bleak import BleakScanner
+        await BleakScanner.discover(timeout=timeout, device_address=address)
+    except Exception as e:
+        log.debug("rediscovery scan failed: %s", e)
+
+
 async def pair(address: str, renew: bool = False) -> bool:
     """Bond with a device (idempotent).  Returns True when bonded.
 
@@ -98,12 +125,16 @@ async def pair(address: str, renew: bool = False) -> bool:
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     try:
         path = dev_path(address)
-        try:
-            intro = await bus.introspect("org.bluez", path)
-        except Exception:
-            raise RuntimeError(
-                f"BlueZ has no object for {address} — run `bpbridge scan` "
-                f"first so the device gets discovered") from None
+        if not await _device_known(bus, path):
+            log.info("no cached BlueZ object for %s — running discovery "
+                     "(keep the monitor awake)", address)
+            await _rediscover(address)
+            if not await _device_known(bus, path):
+                raise RuntimeError(
+                    f"BlueZ still has no Device1 object for {address} — "
+                    f"the monitor is not advertising: wake it (power button) "
+                    f"and retry")
+        intro = await bus.introspect("org.bluez", path)
         dev = bus.get_proxy_object("org.bluez", path, intro)
         dev1 = dev.get_interface("org.bluez.Device1")
 
@@ -170,9 +201,7 @@ async def unpair(address: str) -> bool:
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     try:
         path = dev_path(address)
-        try:
-            await bus.introspect("org.bluez", path)
-        except Exception:
+        if not await _device_known(bus, path):
             log.info("no BlueZ object for %s — nothing to remove", address)
             return False
         await _remove(bus, path)
