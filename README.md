@@ -18,7 +18,7 @@ its Nordic-UART-tunnel memory export without the vendor app (see below).
 | Device | BLE `dump` | BLE `watch` | Notes |
 |---|---|---|---|
 | **Medisana BU 572 connect** (TMB-2276-B) | **live-verified** — bonded session pushed 5 stored records (mmHg, ts+pulse+user+status), CSV/JSON export OK | simulated tests; same subscribe path, live run pending | **pairing required** before the push; live probe: `tools/raw_capture.py` |
-| **Beurer BM 59** | **live-verified** — live mode pushed 12 stored records (2023-era clock) over a **plain, unbonded** link; standard SFLOAT 0x2A35 with MAP, `irregular_heartbeat` status bits decoded | simulated tests; live run pending | `archive` (sync mode) still pending hardware run; protocol per [ipanalytics/Beurer-BM59-Unlocked](https://github.com/ipanalytics/Beurer-BM59-Unlocked-Reverse-Engineering) |
+| **Beurer BM 59** | **live-verified** — live mode pushes the unsent memory on every session (**re-pushes, non-destructive**; 13 records incl. `irregular_heartbeat` flags, plain unbonded link); `settime` live-verified (read-back exact) | simulated tests; live run pending | never pair — firmware rejects bonding; `archive` (sync mode) still pending; protocol per [ipanalytics/Beurer-BM59-Unlocked](https://github.com/ipanalytics/Beurer-BM59-Unlocked-Reverse-Engineering) |
 
 The table lists only what has actually been run on hardware; anything
 implemented but not yet verified on a physical meter would be listed

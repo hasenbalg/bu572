@@ -30,6 +30,16 @@ from ..records import (
 
 log = logging.getLogger("bpbridge.bps")
 
+
+def _printable(s: str) -> str:
+    """Strip NUL/control bytes from device-info strings.
+
+    Real-world firmwares pad these characteristics with raw 0x00 or other
+    non-text bytes (seen live on the Beurer BM 59), which would otherwise
+    make CLI output trip grep's binary-file detection.
+    """
+    return "".join(ch for ch in s if ch.isprintable() or ch == " ").strip()
+
 # the BU 572 ends its push silently; prior art uses 1.5 s quiet / 25 s cap
 DEFAULT_QUIET_SECONDS = 1.5
 DEFAULT_MAX_SESSION_SECONDS = 25.0
@@ -258,7 +268,7 @@ class BpMeter:
                           (gatt.SOFTWARE_REVISION, "software")):
             try:
                 v = await c.read_gatt_char(self._char(uuid))
-                info[key] = v.decode("utf-8", "replace")
+                info[key] = _printable(v.decode("utf-8", "replace"))
             except Exception:
                 pass
         try:

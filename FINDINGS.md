@@ -162,13 +162,19 @@ here is independent; treat these as its documented facts:
   mode.** After one measurement, `bpbridge dump` on a **plain, unbonded
   link** (no pairing — bonding attempts all returned
   `AuthenticationFailed`; treat the model as bond-less in live mode)
-  pushed 12 stored records as standard 0x2A35 indications: SFLOAT values
+  pushed the stored backlog as standard 0x2A35 indications: SFLOAT values
   incl. real MAP, pulse present, user bit absent, and several
   `irregular_heartbeat` status bits — first hardware confirmation of the
-  SIG status-bit table.  So live mode exports unsent memory too, like the
-  BU 572's push; whether live-mode confirmation marks records `is_sent`
-  (leaving `archive` empty afterwards) is the open question.  Device
-  clock was years off (2023-era timestamps) — `settime` recommended.
+  SIG status-bit table.  **Two consecutive sessions re-pushed the same
+  records**: live mode does NOT mark anything transferred — non-destructive
+  full re-push of unsent memory, dedupe keeps repeats harmless, and the
+  app/archive can still collect these records afterwards.
+* **`settime` live-verified** (write + exact read-back, adjust=1).  Gotcha:
+  the first attempt answered `GATT UNLIKELY_ERROR (14)` yet the clock was
+  set anyway (next record correctly timestamped) — after any write error,
+  always re-read Current Time before retrying.  Device clock was years
+  off (2023-era timestamps, firmware default epoch) — set it on first
+  contact.
 * Live status of sync mode (`archive`): pending.
 
 ## Prior art / sources
