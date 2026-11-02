@@ -158,7 +158,18 @@ here is independent; treat these as its documented facts:
   freezes into the watchdog.  Confirmation sets `is_sent` in the EEPROM
   ring buffer: only unsent records are streamed, and **the HealthManager
   app sync consumes them** — same one-designated-host rule as the BU 572.
-* Live status of both modes on Frank's hardware: pending.
+* **Live status on Frank's hardware (2026-10-27): LIVE-VERIFIED for live
+  mode.** After one measurement, `bpbridge dump` on a **plain, unbonded
+  link** (no pairing — bonding attempts all returned
+  `AuthenticationFailed`; treat the model as bond-less in live mode)
+  pushed 12 stored records as standard 0x2A35 indications: SFLOAT values
+  incl. real MAP, pulse present, user bit absent, and several
+  `irregular_heartbeat` status bits — first hardware confirmation of the
+  SIG status-bit table.  So live mode exports unsent memory too, like the
+  BU 572's push; whether live-mode confirmation marks records `is_sent`
+  (leaving `archive` empty afterwards) is the open question.  Device
+  clock was years off (2023-era timestamps) — `settime` recommended.
+* Live status of sync mode (`archive`): pending.
 
 ## Prior art / sources
 
