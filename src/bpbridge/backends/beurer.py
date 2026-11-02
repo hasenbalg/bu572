@@ -123,7 +123,10 @@ class L2capAttTransport:
         else:
             types = [address_type]
         last: Optional[Exception] = None
+        tried = []
         for at in types:
+            label = "public" if at == 1 else "random"
+            tried.append(label)
             s = socket.socket(_AF_BLUETOOTH, socket.SOCK_SEQPACKET,
                               _BTPROTO_L2CAP)
             try:
@@ -142,7 +145,8 @@ class L2capAttTransport:
             time.sleep(0.30)
             return
         assert last is not None
-        raise last
+        raise type(last)(f"{last} (address types tried: "
+                         f"{', '.join(tried)})") from last
 
     @staticmethod
     def _connect(s: socket.socket, mac: str, address_type: int) -> None:
