@@ -73,40 +73,89 @@ class BeurerError(RuntimeError):
     pass
 
 
+def detect_address_type(mac: str) -> int:
+    """LE address type as BlueZ saw it in advertisements (1=public, 2=random).
+
+    The published BM 59 RE claims sync mode advertises under a NEW static
+    random address; Frank's firmware was observed KEEPING its public
+    address — hardcoding type 2 then yields EINVAL.  Default to random
+    when BlueZ has no record.
+    """
+    try:
+        from dbus_fast import BusType
+        from dbus_fast.main import MessageBus
+        bus = MessageBus(bus_type=BusType.SYSTEM)
+        bus.connect()
+        try:
+            intro = bus.introspect("org.bluez", "/")
+            obj = bus.get_proxy_object("org.bluez", "/", intro)
+            mgr = obj.get_interface("org.freedesktop.DBus.ObjectManager")
+            objects = mgr.call_get_managed_objects()
+        finally:
+            bus.disconnect()
+        for _path, ifaces in objects.items():
+            dev = ifaces.get("org.bluez.Device1")
+            if not dev:
+                continue
+            addr = getattr(dev.get("Address"), "value", dev.get("Address"))
+            if str(addr) != mac:
+                continue
+            at = dev.get("AddressType")
+            at = str(getattr(at, "value", at)).lower()
+            return 1 if at == "public" else 2
+    except Exception as e:
+        log.debug("address-type detection failed (%s); assuming random", e)
+    return 2
+
+
 class L2capAttTransport:
     """SEQPACKET L2CAP socket on the fixed ATT channel, encrypted link.
 
     Each send/recv is exactly one ATT PDU (kernel framing).
     """
 
-    def __init__(self, mac: str):
-        s = socket.socket(_AF_BLUETOOTH, socket.SOCK_SEQPACKET, _BTPROTO_L2CAP)
-        try:
-            # medium security: Just Works encryption brought up on connect;
-            # key_size 0 = adapter default
-            s.setsockopt(_SOL_BLUETOOTH, _SO_L2CAP_SECURITY_LEVEL,
-                         struct.pack("BB", _BT_SECURITY_MEDIUM, 0))
-            self._connect(s, mac)
-        except Exception:
-            s.close()
-            raise
-        self.sock = s
-        # give the kernel time to finish the SMP exchange before the first
-        # write — the reference implementation waits ~250 ms
-        time.sleep(0.30)
+    def __init__(self, mac: str, address_type: Optional[int] = None):
+        if address_type is None:
+            address_type = detect_address_type(mac)
+            # the detected type can be stale (the modes may differ) — let a
+            # fast EINVAL fall back to the other one
+            types = [address_type, 2 if address_type == 1 else 1]
+        else:
+            types = [address_type]
+        last: Optional[Exception] = None
+        for at in types:
+            s = socket.socket(_AF_BLUETOOTH, socket.SOCK_SEQPACKET,
+                              _BTPROTO_L2CAP)
+            try:
+                # medium security: Just Works encryption brought up on
+                # connect; key_size 0 = adapter default
+                s.setsockopt(_SOL_BLUETOOTH, _SO_L2CAP_SECURITY_LEVEL,
+                             struct.pack("BB", _BT_SECURITY_MEDIUM, 0))
+                self._connect(s, mac, at)
+            except Exception as e:
+                last = e
+                s.close()
+                continue
+            self.sock = s
+            # give the kernel time to finish the SMP exchange before the
+            # first write — the reference implementation waits ~250 ms
+            time.sleep(0.30)
+            return
+        assert last is not None
+        raise last
 
     @staticmethod
-    def _connect(s: socket.socket, mac: str) -> None:
+    def _connect(s: socket.socket, mac: str, address_type: int) -> None:
         try:
             # Python >= 3.12 accepts the LE address type in the tuple
-            s.connect((mac, 0, _ATT_CID, _BDADDR_LE_RANDOM))
+            s.connect((mac, 0, _ATT_CID, address_type))
             return
         except (ValueError, OSError):
             pass  # older CPython: 4-tuple rejected, fall back to libc
-        L2capAttTransport._connect_libc(s, mac)
+        L2capAttTransport._connect_libc(s, mac, address_type)
 
     @staticmethod
-    def _connect_libc(s: socket.socket, mac: str) -> None:
+    def _connect_libc(s: socket.socket, mac: str, address_type: int) -> None:
         libc = ctypes.CDLL("libc.so.6", use_errno=True)
 
         class _BdAddr(ctypes.Structure):
@@ -126,7 +175,7 @@ class L2capAttTransport:
         addr.l2_family = _AF_BLUETOOTH
         addr.l2_psm = 0
         addr.l2_cid = _ATT_CID
-        addr.l2_bdaddr_type = _BDADDR_LE_RANDOM
+        addr.l2_bdaddr_type = address_type
         for i, octet in enumerate(reversed(mac.split(":"))):
             addr.l2_bdaddr.b[i] = int(octet, 16)
         res = libc.connect(s.fileno(), ctypes.byref(addr), ctypes.sizeof(addr))
@@ -134,11 +183,10 @@ class L2capAttTransport:
             err = ctypes.get_errno()
             raise OSError(err, f"L2CAP connect to {mac} failed: "
                                f"{os_strerror(err)}"
-                               + (" — sync mode advertises a NEW static-"
-                                  "random address (serial-number name), not "
-                                  "the live-mode MAC; find it with "
-                                  "`scan --all` while the Bluetooth icon "
-                                  "blinks" if err == 22 else ""))
+                               + (" — address type mismatch or the monitor "
+                                  "is not advertising right now (memory/"
+                                  "sync mode must be active during the "
+                                  "connect)" if err == 22 else ""))
 
     def send(self, pdu: bytes) -> None:
         self.sock.send(pdu)

@@ -139,7 +139,12 @@ here is independent; treat these as its documented facts:
   on generic BP support; Gadgetbridge notes the clock must be written
   before it yields *timestamped* readings). Sync/memory: hold power
   ~3–5 s on the off device (Bluetooth icon blinks), 60–90 s window,
-  adv name = serial number, address type **static random**.
+  adv name = serial number, address type **static random** — **but
+  Frank's firmware differs (live, 2026-11-02): it KEEPS its public
+  address in memory mode, and pressing the memory button merely makes
+  the standard 0x1810 `dump` work (whole backlog re-pushed).** The
+  transport now auto-detects the LE address type from BlueZ instead of
+  hardcoding random.
 * Sync mode tunnels **standard SIG structures** through the Nordic UART
   service (`6e400001-…9e`): RX `…02` write-Command, TX `…03` indicate,
   CCCD `…2902` write-**Request** `0x0002`.  Firmware handles (verified):
