@@ -122,7 +122,8 @@ async def _cmd_settime(args) -> int:
             print(f"meter clock: {old.isoformat() if old else 'unreadable'}")
             print(f"writing:     {now.replace(microsecond=0).isoformat()} "
                   f"({args.tz} wall time)")
-            payload = await meter.set_current_time(now)
+            payload = await meter.set_current_time(
+                now, adjust_reason=getattr(args, "adjust", 1))
             print(f"wrote {payload.hex(' ')}")
             verify = await meter.current_time()
             print(f"read back:   {verify.isoformat() if verify else 'unreadable'}")
@@ -210,6 +211,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--at", metavar="ISO_DATETIME",
                    help="explicit wall time, e.g. '2026-10-27 08:00:00' "
                         "(overrides --tz's current time)")
+    s.add_argument("--adjust", type=int, default=1, metavar="N",
+                   help="Adjust Reason byte (1 = ODP update; try 0 if the "
+                        "firmware rejects the write — Beurer's own tunnel "
+                        "handshake uses 0)")
 
     s = sub.add_parser(
         "archive",

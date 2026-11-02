@@ -232,7 +232,8 @@ class BpMeter:
         except ValueError:
             return None
 
-    async def set_current_time(self, when: dt.datetime) -> bytes:
+    async def set_current_time(self, when: dt.datetime,
+                               adjust_reason: int = 1) -> bytes:
         """Write the Current Time characteristic (0x2A2B).
 
         Explicit opt-in only — no sync path calls this automatically
@@ -240,7 +241,7 @@ class BpMeter:
         firmware, i.e. a bond — `pair` first.
         """
         c = self._require()
-        payload = build_current_time_packet(when, adjust_reason=1)
+        payload = build_current_time_packet(when, adjust_reason=adjust_reason)
         await c.write_gatt_char(self._char(gatt.CURRENT_TIME), payload,
                                 response=True)
         log.info("wrote current time %s to %s", when.isoformat(), self.name)
