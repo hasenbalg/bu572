@@ -180,7 +180,18 @@ here is independent; treat these as its documented facts:
   always re-read Current Time before retrying.  Device clock was years
   off (2023-era timestamps, firmware default epoch) — set it on first
   contact.
-* Live status of sync mode (`archive`): pending.
+* **Button-mode caution (live, 2026-11-02):** the published sync mode
+  (Bluetooth icon blinking) does NOT exist on Frank's firmware — no
+  button hold produces it; `archive` therefore cannot reach this unit.
+  A both-buttons 3 s hold shows `00 EN` / `00 dS` screens; after such
+  experiments the next dump streamed ONLY the newest record — the old
+  backlog is gone, so `dS` was almost certainly a memory **delete**
+  (`dEL` on a segment display).  NEVER hold both buttons on this device.
+  Practical data path on this unit: plain `dump` after measuring (or on
+  a memory-button press), nothing else needed.
+* Live status of sync mode (`archive`): N/A on Frank's firmware (no
+  tunnel); backend remains covered by capture-vector tests for units
+  matching the published spec.
 
 ## Prior art / sources
 
