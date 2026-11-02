@@ -155,7 +155,8 @@ async def _cmd_archive(args) -> int:
           "(sudo .venv/bin/bpbridge archive ...)")
     on_record = None if silent else (lambda r: print(r))
     readings = await sync_memory_async(
-        args.address, now.replace(microsecond=0), on_record=on_record)
+        args.address, now.replace(microsecond=0), on_record=on_record,
+        security=args.security)
     if silent:
         _print_readings(readings, args.json, args.csv)
     else:
@@ -228,6 +229,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="explicit wall time for the handshake packet")
     s.add_argument("--csv", metavar="FILE", help="write readings to CSV")
     s.add_argument("--json", action="store_true", help="JSON to stdout")
+    s.add_argument("--security", choices=("auto", "medium", "low"),
+                   default="auto",
+                   help="link security: auto = Just Works encrypted, "
+                        "fall back to plain (default)")
 
     s = sub.add_parser("pair", help="bond with the device (one-time)")
     s.add_argument("address")

@@ -114,7 +114,8 @@ class L2capAttTransport:
     Each send/recv is exactly one ATT PDU (kernel framing).
     """
 
-    def __init__(self, mac: str, address_type: Optional[int] = None):
+    def __init__(self, mac: str, address_type: Optional[int] = None,
+                 security: str = "auto"):
         if address_type is None:
             address_type = detect_address_type(mac)
             # the detected type can be stale (the modes may differ) — let a
@@ -122,32 +123,55 @@ class L2capAttTransport:
             types = [address_type, 2 if address_type == 1 else 1]
         else:
             types = [address_type]
+        # BT_SECURITY_MEDIUM worked on the reference machine (no bluetoothd);
+        # with BlueZ owning SMP the kernel security path can fail the connect
+        # outright (raw HCI status 0x26 seen on 6.18-rpi + bluetoothd).  "auto"
+        # therefore tries encrypted first, then plain — if the device needs
+        # encryption for the handshake we'll see a proper ATT error instead.
+        if security == "medium":
+            levels = [(_BT_SECURITY_MEDIUM, "medium")]
+        elif security == "low":
+            levels = [(None, "low")]
+        else:
+            levels = [(_BT_SECURITY_MEDIUM, "medium"), (None, "low")]
         last: Optional[Exception] = None
         tried = []
-        for at in types:
-            label = "public" if at == 1 else "random"
-            tried.append(label)
-            s = socket.socket(_AF_BLUETOOTH, socket.SOCK_SEQPACKET,
-                              _BTPROTO_L2CAP)
-            try:
-                # medium security: Just Works encryption brought up on
-                # connect; key_size 0 = adapter default
-                s.setsockopt(_SOL_BLUETOOTH, _SO_L2CAP_SECURITY_LEVEL,
-                             struct.pack("BB", _BT_SECURITY_MEDIUM, 0))
-                self._bind_att(s, at)
-                self._connect(s, mac, at)
-            except Exception as e:
-                last = e
-                s.close()
-                continue
-            self.sock = s
-            # give the kernel time to finish the SMP exchange before the
-            # first write — the reference implementation waits ~250 ms
-            time.sleep(0.30)
-            return
+        for sec, sec_label in levels:
+            for at in types:
+                label = f"{sec_label}/{('public' if at == 1 else 'random')}"
+                tried.append(label)
+                s = socket.socket(_AF_BLUETOOTH, socket.SOCK_SEQPACKET,
+                                  _BTPROTO_L2CAP)
+                try:
+                    if sec is not None:
+                        # Just Works encryption brought up on connect;
+                        # key_size 0 = adapter default
+                        s.setsockopt(_SOL_BLUETOOTH, _SO_L2CAP_SECURITY_LEVEL,
+                                     struct.pack("BB", sec, 0))
+                    self._bind_att(s, at)
+                    self._connect(s, mac, at)
+                except Exception as e:
+                    last = e
+                    s.close()
+                    log.debug("L2CAP connect attempt %s failed: %s", label, e)
+                    continue
+                self.sock = s
+                log.info("L2CAP ATT link up (%s)", label)
+                # give the kernel time to finish the SMP exchange before the
+                # first write — the reference implementation waits ~250 ms;
+                # unencrypted links need no grace
+                if sec is not None:
+                    time.sleep(0.30)
+                return
         assert last is not None
-        raise type(last)(f"{last} (address types tried: "
-                         f"{', '.join(tried)})") from last
+        hint = (" — connect failed with an odd errno; with bluetoothd "
+                "running the kernel may report an HCI status here "
+                "(38/0x26 'Link Key cannot be Changed' => try "
+                "'systemctl stop bluetooth' for the duration of the "
+                "sync). Last error: " if getattr(last, "errno", None) == 38
+                else " (address types/security tried: "
+                     f"{', '.join(tried)}): ")
+        raise type(last)(f"{hint}{last}") from last
 
     @staticmethod
     def _bind_att(s: socket.socket, address_type: int) -> None:
@@ -272,6 +296,7 @@ def sync_memory(
     rx_handle: int = HANDLE_NUS_RX,
     tx_handle: int = HANDLE_NUS_TX,
     cccd_handle: int = HANDLE_NUS_CCCD,
+    security: str = "auto",
     transport=None,
 ) -> list[BpReading]:
     """Run one BM 59 memory-export session; return the streamed records.
@@ -284,7 +309,7 @@ def sync_memory(
     if when is None:
         when = dt.datetime.now()
     if transport is None:
-        transport = L2capAttTransport(mac)
+        transport = L2capAttTransport(mac, security=security)
     readings: list[BpReading] = []
     seen: set = set()
     deadline = time.monotonic() + max_seconds
