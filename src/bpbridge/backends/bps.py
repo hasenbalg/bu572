@@ -21,7 +21,12 @@ from bleak.backends.device import BLEDevice
 
 from .. import gatt
 from ..models import BpReading
-from ..records import RecordError, parse_bp_measurement, parse_intermediate_cuff
+from ..records import (
+    RecordError,
+    build_current_time_packet,
+    parse_bp_measurement,
+    parse_intermediate_cuff,
+)
 
 log = logging.getLogger("bpbridge.bps")
 
@@ -231,16 +236,11 @@ class BpMeter:
         """Write the Current Time characteristic (0x2A2B).
 
         Explicit opt-in only — no sync path calls this automatically
-        (see README "Design decisions").  Payload is the SIG Current Time
-        layout, 10 bytes: Date Time (u16 LE year, month, day, hour, min,
-        sec — device-local wall time) + Day of Week (1=Mon..7=Sun) +
-        Fractions256 (0) + Adjust Reason (1 = ODP field update).
-        Requires encryption on this firmware, i.e. a bond — `pair` first.
+        (see README "Design decisions").  Requires encryption on this
+        firmware, i.e. a bond — `pair` first.
         """
         c = self._require()
-        payload = struct.pack("<H8B", when.year, when.month, when.day,
-                              when.hour, when.minute, when.second,
-                              when.isoweekday(), 0, 1)
+        payload = build_current_time_packet(when, adjust_reason=1)
         await c.write_gatt_char(self._char(gatt.CURRENT_TIME), payload,
                                 response=True)
         log.info("wrote current time %s to %s", when.isoformat(), self.name)

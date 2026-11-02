@@ -58,7 +58,7 @@ def test_status_one_byte_lenient():
     data = bytes.fromhex("1e") + V_STD[1:-1] + bytes.fromhex("00") + bytes.fromhex("04")
     r = parse_bp_measurement(data)
     assert r.status == 0x04
-    assert r.status_flags == ["speech_detected"]
+    assert r.status_flags == ["irregular_heartbeat"]
 
 
 def test_flags_none_only_core():

@@ -26,8 +26,12 @@ BATTERY_SERVICE       = u16("180f")
 BATTERY_LEVEL         = u16("2a19")
 
 # --- Current Time Service (0x1805) ---
-# The BU 572 accepts a writable Current Time characteristic.  We deliberately
-# keep it READ-ONLY: setting the clock on a medical device is out of scope
-# (see README "Design decisions").
+# Writable on our devices; written ONLY by the explicit `bpbridge settime`
+# command (never as a side effect of a sync) — see README "Design decisions".
 CURRENT_TIME_SERVICE  = u16("1805")
 CURRENT_TIME          = u16("2a2b")
+
+# --- Nordic UART Service (vendor tunnel, Beurer BM 59 memory export) ---
+NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+NUS_RX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # host -> device, write-cmd
+NUS_TX      = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # device -> host, indicate

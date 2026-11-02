@@ -19,11 +19,15 @@ NAME_PATTERNS = [
     ("bu?5*", "bps"),             # Medisana BU 5xx connect family ("BU 572")
     ("bu5*", "bps"),              # ...advertised without the space
     ("medisana*", "bps"),
+    ("beurer*", "bps"),           # Beurer BM 5x live mode ("Beurer BM59")
+    ("bm?5*", "bps"),             # ...advertised as "BM 59"
+    ("bm5*", "bps"),
 ]
 
 # service UUIDs in advertisements -> backend (order = priority)
 SERVICE_HINTS = {
     gatt.BP_SERVICE: "bps",
+    gatt.NUS_SERVICE: "beurer",   # BM 59 sync mode (serial-number adv name)
 }
 
 
@@ -188,6 +192,12 @@ class BpBridge:
             target = target.address
         if isinstance(target, str):
             backend = await self._resolve_backend(target)
+            if backend == "beurer":
+                raise RuntimeError(
+                    f"{target} looks like a Beurer BM 59 in sync mode "
+                    "(Nordic UART tunnel) — its 1500 ms watchdog rules out "
+                    "a GATT connection; export its memory with: "
+                    f"bpbridge archive {target} --tz <zone>")
             if backend is None:
                 log.info("no name/service hint for %s; using standard BLP "
                          "backend anyway", target)

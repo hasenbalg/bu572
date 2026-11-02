@@ -9,13 +9,16 @@ mirroring the design of
 Primary target: **Medisana BU 572 connect** (upper-arm monitor, device
 marking `TMB-2276-B`).  The backend is the *standard* Bluetooth SIG Blood
 Pressure Service, so other BLP-certified monitors are expected to work
-with the same code path.
+with the same code path.  Also supported: **Beurer BM 59** — standard
+profile for live readings, plus a dedicated raw-L2CAP path that unlocks
+its Nordic-UART-tunnel memory export without the vendor app (see below).
 
 ## Verification status
 
 | Device | BLE `dump` | BLE `watch` | Notes |
 |---|---|---|---|
 | **Medisana BU 572 connect** (TMB-2276-B) | **live-verified** — bonded session pushed 5 stored records (mmHg, ts+pulse+user+status), CSV/JSON export OK | simulated tests; same subscribe path, live run pending | **pairing required** before the push; live probe: `tools/raw_capture.py` |
+| **Beurer BM 59** | `archive` path simulated-tested against the published capture vectors | simulated tests | live run pending; protocol from [ipanalytics/Beurer-BM59-Unlocked](https://github.com/ipanalytics/Beurer-BM59-Unlocked-Reverse-Engineering) (HCI-capture-verified) |
 
 The table lists only what has actually been run on hardware; anything
 implemented but not yet verified on a physical meter would be listed
@@ -55,12 +58,40 @@ bpbridge dump AA:BB:CC:DD:EE:FF --json               # JSON to stdout
 bpbridge watch AA:BB:CC:DD:EE:FF    # keep the session open for live values
 bpbridge settime AA:BB:CC:DD:EE:FF --tz Europe/Berlin  # write the clock
                                     # (opt-in; --at for an exact instant)
+bpbridge archive AA:BB:CC:DD:EE:FF --tz Europe/Berlin  # Beurer BM 59 memory
+                                    # export (hold power ~3 s first; root)
 bpbridge pair AA:BB:CC:DD:EE:FF     # bond once (Just Works agent)
 bpbridge unpair AA:BB:CC:DD:EE:FF   # remove this host's bond
 ```
 
-Keep a phone running the Medisana/VitaDock app away while syncing: the
-monitor serves exactly one central.
+Keep a phone running the Medisana/VitaDock (or Beurer HealthManager) app
+away while syncing: the monitor serves exactly one central, and an app
+sync consumes the stored records before you can export them.
+
+## Beurer BM 59
+
+The BM 59 has **two advertise modes** and bpbridge speaks both:
+
+* **Live mode** — automatically after each measurement, for ~15 s, name
+  `Beurer BM59`.  Standard Blood Pressure Service; the normal `dump` /
+  `watch` / `settime` commands apply (`pair` first).
+* **Sync mode** — hold the power/memory button on the *off* device ~3 s
+  until the Bluetooth icon blinks.  The device then advertises its serial
+  number (find it with `scan --all`) for 60–90 s and offers its whole
+  memory through a Nordic UART service tunnel — this is the private
+  channel the Beurer app uses.  Export it with:
+
+  ```bash
+  sudo .venv/bin/bpbridge archive <MAC> --tz Europe/Berlin --csv out.csv
+  ```
+
+  The export needs a raw L2CAP/ATT socket (root): the firmware kills any
+  connection whose CCCD + time handshake isn't complete within **1500 ms**,
+  which a normal GATT library's service discovery can't reliably meet.
+  The handshake *writes the device clock* — unavoidable, it is the tunnel's
+  key-release; that is why `--tz` is required here as well.  Like the
+  BU 572, only records not yet marked as sent are streamed, and confirming
+  them marks them sent: one designated sync host, app syncs eat history.
 
 ## Library
 
@@ -90,7 +121,10 @@ cuff too loose, ...), and the raw notification bytes for debugging.
   sync session.  This library NEVER writes the clock as a side effect of
   scan/dump/watch — the only way a write happens is you running
   `bpbridge settime --tz <zone>` yourself (the timezone argument is
-  required so the written wall time is always deliberate).
+  required so the written wall time is always deliberate).  The single
+  exception is the Beurer BM 59 `archive` handshake, where the time
+  packet *is* the protocol's export trigger — hence `--tz` is required
+  there too.
   Records are timestamped by the meter's own RTC, so keeping it honest is
   worth a `settime` after battery changes.
 * **No history protocol beyond the push.** The 199-slots-per-user memory is
@@ -136,6 +170,15 @@ BLE behaviour of the BU 572 was first documented publicly by:
   integration for other Medisana BP models (BU 530/570), same service.
 * [HA community: ESPHome tracker for BU 570/575/584](https://community.home-assistant.io/t/esphome-bluetooth-tracker-for-medisana-bu-570-575-584-blood-pressure-monitor/967208)
   — early packet notes.
+* [ipanalytics/Beurer-BM59-Unlocked-Reverse-Engineering](https://github.com/ipanalytics/Beurer-BM59-Unlocked-Reverse-Engineering)
+  — the BM 59 sync-mode protocol: byte-level spec from an HCI snoop
+  capture, verified live (watchdog, handles, packet layouts, `is_sent`
+  memory semantics).  The `archive` backend follows its findings.
+* [Gadgetbridge PR 7186](https://codeberg.org/Freeyourgadget/Gadgetbridge/pulls/7186)
+  — BM 59 live-mode on the generic GATT BP support; notes that readings
+  need the clock written first.
+* [derdilla/blood-pressure-monitor-fl](https://github.com/derdilla/blood-pressure-monitor-fl)
+  — device matrix confirming `BM 59` = standard GATT in live mode.
 * Bluetooth SIG Blood Pressure Service specification for the record layout.
 
 Thanks to all of them — go star their repos.

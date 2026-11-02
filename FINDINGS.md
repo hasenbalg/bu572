@@ -110,10 +110,12 @@ sys,dia,map  3 × SFLOAT16 LE
   (flag bit0), requiring ×7.50061683 → mmHg *(prior art, encoded in
   `test_records.py`)*.
 * MAP is taken from the device, never recomputed *(prior art)*.
-* Measurement status bits: 0 body movement, 1 cuff too loose,
-  2 speech detected.  The BU 572 also markets an "irregular heartbeat"
-  indicator — where that bit lives is unconfirmed; keep `status` raw in
-  JSON export until seen live.
+* Measurement status bits (SIG GSS Measurement Status): 0 body movement,
+  1 cuff too loose, 2 irregular heartbeat, 3 pulse detected,
+  4 speech detected.  (Earlier draft of this file guessed bit2=speech —
+  corrected against the SIG structure when the BM 59 capture showed
+  status words using several bits.)  The BU 572 has only ever pushed
+  status 0 live so far; keep `status` raw in JSON export.
 * Guest mode: user raw `0xFF` → `BpReading.guest == True` *(inference from
   the marketing "guest mode" feature + SIG 0xFF semantics; confirm live)*.
 
@@ -126,8 +128,47 @@ sys,dia,map  3 × SFLOAT16 LE
   write on a plain link fails, prior art pairs then retries).
 * Live status of the write path: pending hardware confirmation.
 
+## Beurer BM 59 (second supported device)
+
+Protocol source: [ipanalytics/Beurer-BM59-Unlocked-Reverse-Engineering](https://github.com/ipanalytics/Beurer-BM59-Unlocked-Reverse-Engineering)
+— HCI-snoop-derived byte-level spec verified on a live unit. All code
+here is independent; treat these as its documented facts:
+
+* **Two advertise modes.** Live: auto after measuring, ~15 s window,
+  name `Beurer BM59`, standard 0x1810 profile (Gadgetbridge registers it
+  on generic BP support; Gadgetbridge notes the clock must be written
+  before it yields *timestamped* readings). Sync/memory: hold power
+  ~3–5 s on the off device (Bluetooth icon blinks), 60–90 s window,
+  adv name = serial number, address type **static random**.
+* Sync mode tunnels **standard SIG structures** through the Nordic UART
+  service (`6e400001-…9e`): RX `…02` write-Command, TX `…03` indicate,
+  CCCD `…2902` write-**Request** `0x0002`.  Firmware handles (verified):
+  RX `0x0012`, TX `0x0015`, CCCD `0x0016`.
+* **1500 ms connection watchdog**: CCCD + 10-byte Current Time packet
+  must land within 1.5 s of connect or the firmware disconnects — this
+  is why the backend is raw `AF_BLUETOOTH`/L2CAP CID-4 (root), skipping
+  GATT discovery; bleak/BlueZ discovery exceeds the window on slow links.
+  Security: LE Mode 1 Level 2 Just Works via L2CAP security setsockopt
+  (medium); ~300 ms grace for kernel SMP before the first write.
+* Record: fixed **18 bytes**, flags(0x16) + sys/dia/**pulse** u16 LE
+  (pulse occupies the MAP slot — no MAP is transmitted) + Date Time +
+  status u16 + user index u16 (0-based; mapping to users 1/2 inferred,
+  confirm live).  Values raw u16, not SFLOAT.
+* Every indication must be confirmed (0x1E) immediately or the stream
+  freezes into the watchdog.  Confirmation sets `is_sent` in the EEPROM
+  ring buffer: only unsent records are streamed, and **the HealthManager
+  app sync consumes them** — same one-designated-host rule as the BU 572.
+* Live status of both modes on Frank's hardware: pending.
+
 ## Prior art / sources
 
+* https://github.com/ipanalytics/Beurer-BM59-Unlocked-Reverse-Engineering
+  — BM 59 sync-mode protocol (HCI capture, live-verified); factual source
+  for the `archive` backend.
+* https://codeberg.org/Freeyourgadget/Gadgetbridge/pulls/7186 — BM 59
+  live mode on generic GATT BP support (clock must be set first).
+* https://github.com/derdilla/blood-pressure-monitor-fl — device matrix
+  (`BM 59` standard GATT in live mode).
 * https://github.com/jagula/home-assistant-medisana-bu572 — first public
   BU 572 integration (MIT); the primary factual source for this file.
   All code in this repo is written independently; protocol *facts* were

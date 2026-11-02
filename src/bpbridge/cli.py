@@ -1,4 +1,4 @@
-"""Command line interface: scan | info | dump | watch | settime | pair | unpair."""
+"""Command line interface: scan | info | dump | watch | settime | archive | pair | unpair."""
 from __future__ import annotations
 
 import argparse
@@ -134,6 +134,39 @@ async def _cmd_settime(args) -> int:
                 pass
 
 
+async def _cmd_archive(args) -> int:
+    """Beurer BM 59 memory export over the Nordic UART tunnel (raw L2CAP)."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    from .backends.beurer import sync_memory_async
+    try:
+        tz = ZoneInfo(args.tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        print(f"error: unknown timezone {args.tz!r}", file=sys.stderr)
+        return 2
+    now = dt.datetime.now(tz)
+    if args.at:
+        now = dt.datetime.fromisoformat(args.at)
+
+    silent = bool(args.csv or args.json)
+    print("hold the monitor's power/memory button ~3 s until the Bluetooth "
+          "icon blinks, then continue; runs raw L2CAP — needs root "
+          "(sudo .venv/bin/bpbridge archive ...)")
+    on_record = None if silent else (lambda r: print(r))
+    readings = await sync_memory_async(
+        args.address, now.replace(microsecond=0), on_record=on_record)
+    if silent:
+        _print_readings(readings, args.json, args.csv)
+    else:
+        print(f"-- {len(readings)} reading(s)")
+    if not readings:
+        print("nothing streamed — is the Bluetooth icon blinking (sync "
+              "mode), is this the MAC shown by `scan --all` while it "
+              "advertises, and did it run as root?  records already "
+              "confirmed by an earlier sync are not re-sent")
+    return 0 if readings else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="bpbridge",
@@ -178,6 +211,19 @@ def build_parser() -> argparse.ArgumentParser:
                    help="explicit wall time, e.g. '2026-10-27 08:00:00' "
                         "(overrides --tz's current time)")
 
+    s = sub.add_parser(
+        "archive",
+        help="export a Beurer BM 59's stored memory over the Nordic UART "
+             "tunnel (hold power ~3 s first; needs root)")
+    s.add_argument("address")
+    s.add_argument("--tz", metavar="IANA_TZ", required=True,
+                   help="required, e.g. Europe/Berlin — the export "
+                        "handshake writes this wall time to the meter")
+    s.add_argument("--at", metavar="ISO_DATETIME",
+                   help="explicit wall time for the handshake packet")
+    s.add_argument("--csv", metavar="FILE", help="write readings to CSV")
+    s.add_argument("--json", action="store_true", help="JSON to stdout")
+
     s = sub.add_parser("pair", help="bond with the device (one-time)")
     s.add_argument("address")
     s.add_argument("--renew", action="store_true",
@@ -204,6 +250,8 @@ def main(argv=None) -> int:
             return asyncio.run(_cmd_connect_session(args, "watch"))
         if args.cmd == "settime":
             return asyncio.run(_cmd_settime(args))
+        if args.cmd == "archive":
+            return asyncio.run(_cmd_archive(args))
         if args.cmd == "pair":
             return 0 if asyncio.run(pair(args.address, renew=args.renew)) else 1
         if args.cmd == "unpair":

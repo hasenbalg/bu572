@@ -9,10 +9,13 @@ from typing import Optional
 KPA_TO_MMHG = 7.50061683
 
 # Measurement Status (UINT16, values shared with the 0x2A39 characteristic).
+# Bit meanings per the SIG GSS Measurement Status structure.
 STATUS_BITS = [
     "body_movement",        # bit 0
     "cuff_too_loose",       # bit 1
-    "speech_detected",      # bit 2
+    "irregular_heartbeat",  # bit 2
+    "pulse_detected",       # bit 3
+    "speech_detected",      # bit 4
 ]
 
 
