@@ -134,6 +134,7 @@ class L2capAttTransport:
                 # connect; key_size 0 = adapter default
                 s.setsockopt(_SOL_BLUETOOTH, _SO_L2CAP_SECURITY_LEVEL,
                              struct.pack("BB", _BT_SECURITY_MEDIUM, 0))
+                self._bind_att(s, at)
                 self._connect(s, mac, at)
             except Exception as e:
                 last = e
@@ -147,6 +148,46 @@ class L2capAttTransport:
         assert last is not None
         raise type(last)(f"{last} (address types tried: "
                          f"{', '.join(tried)})") from last
+
+    @staticmethod
+    def _bind_att(s: socket.socket, address_type: int) -> None:
+        """bind() the fixed ATT source CID before connect().
+
+        Since the src_type fix-up landed, l2cap_sock_connect() rejects an
+        unbound socket to CID 4 from a BR/EDR adapter with EINVAL because
+        chan->scid is still 0 ("accept only when both source and
+        destination CID indicate ATT") — seen live on kernel 6.18-rpi.
+        BlueZ's own btio (gatttool et al.) always binds first; do the
+        same.  Older kernels simply accept it.
+        """
+        try:
+            s.bind(("00:00:00:00:00:00", 0, _ATT_CID, address_type))
+            return
+        except (ValueError, OSError):
+            pass  # old CPython tuple form: fall through to libc bind
+        # struct sockaddr_l2 is identical to the connect one; reuse it.
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+
+        class _BdAddr(ctypes.Structure):
+            _fields_ = [("b", ctypes.c_uint8 * 6)]
+
+        class _SockAddrL2(ctypes.Structure):
+            _fields_ = [
+                ("l2_family", ctypes.c_uint16),
+                ("l2_psm", ctypes.c_uint16),
+                ("l2_bdaddr", _BdAddr),
+                ("l2_cid", ctypes.c_uint16),
+                ("l2_bdaddr_type", ctypes.c_uint8),
+                ("l2_padding", ctypes.c_uint8),
+            ]
+
+        addr = _SockAddrL2()
+        addr.l2_family = _AF_BLUETOOTH
+        addr.l2_cid = _ATT_CID
+        addr.l2_bdaddr_type = address_type
+        if libc.bind(s.fileno(), ctypes.byref(addr), ctypes.sizeof(addr)) != 0:
+            err = ctypes.get_errno()
+            raise OSError(err, f"L2CAP bind(CID ATT) failed: {os_strerror(err)}")
 
     @staticmethod
     def _connect(s: socket.socket, mac: str, address_type: int) -> None:
