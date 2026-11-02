@@ -133,7 +133,12 @@ class L2capAttTransport:
         if res != 0:
             err = ctypes.get_errno()
             raise OSError(err, f"L2CAP connect to {mac} failed: "
-                               f"{os_strerror(err)}")
+                               f"{os_strerror(err)}"
+                               + (" — sync mode advertises a NEW static-"
+                                  "random address (serial-number name), not "
+                                  "the live-mode MAC; find it with "
+                                  "`scan --all` while the Bluetooth icon "
+                                  "blinks" if err == 22 else ""))
 
     def send(self, pdu: bytes) -> None:
         self.sock.send(pdu)
